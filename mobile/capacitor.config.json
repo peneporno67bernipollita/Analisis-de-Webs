@@ -1,0 +1,10 @@
+{
+  "appId": "es.bos.opportunityscanner",
+  "appName": "Opportunity Scanner",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true,
+    "allowNavigation": ["*"]
+  }
+}

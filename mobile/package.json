@@ -1,0 +1,11 @@
+{
+  "name": "bos-android",
+  "version": "1.0.0",
+  "private": true,
+  "description": "App Android (Capacitor) que abre tu servidor de Business Opportunity Scanner",
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/cli": "8.5.2",
+    "@capacitor/core": "8.5.2"
+  }
+}

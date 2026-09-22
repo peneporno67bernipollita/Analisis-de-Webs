@@ -42,3 +42,8 @@ next-env.d.ts
 .vscode/*
 !.vscode/extensions.json
 .idea/
+
+# app Android (Capacitor): generado en CI
+/mobile/node_modules/
+/mobile/android/
+/mobile/*.apk
