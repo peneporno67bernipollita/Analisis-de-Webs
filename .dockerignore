@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+.local
+exports
+coverage
+test-results
+playwright-report
+src/generated
+*.md
+!README.md

@@ -1,0 +1,44 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# testing
+/coverage
+/test-results
+/playwright-report
+/blob-report
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# generated
+/src/generated/
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# debug
+npm-debug.log*
+
+# secrets / local-only files (NUNCA subir)
+.env
+.env.*
+!.env.example
+.local/
+exports/
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# editors
+.vscode/*
+!.vscode/extensions.json
+.idea/

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run test)",
+      "Bash(npm run test:*)",
+      "Bash(npm run typecheck)",
+      "Bash(npm run lint)",
+      "Bash(npm run build)",
+      "Bash(npm run health)",
+      "Bash(npm run audit:*)",
+      "Bash(npm run export:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npx prisma generate)",
+      "Bash(npx prisma validate)"
+    ],
+    "deny": ["Read(./.env)", "Read(./.env.*)", "Read(./.local/**)"]
+  }
+}

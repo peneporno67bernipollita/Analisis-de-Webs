@@ -1,0 +1,48 @@
+# Despliegue autocontenido: PostgreSQL + migraciones + app (con worker in-process).
+# Uso:  docker compose up -d --build
+# Requiere en .env: POSTGRES_PASSWORD, AUTH_USERNAME, AUTH_PASSWORD_HASH, AUTH_SECRET (y opcionalmente GOOGLE_MAPS_API_KEY...)
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en .env}
+      POSTGRES_DB: bos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bos -d bos"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      target: builder
+    command: ["npx", "prisma", "migrate", "deploy"]
+    environment:
+      DATABASE_URL: postgresql://bos:${POSTGRES_PASSWORD}@db:5432/bos?schema=public
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://bos:${POSTGRES_PASSWORD}@db:5432/bos?schema=public
+      NODE_ENV: production
+      WORKER_MODE: inprocess
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

@@ -1,0 +1,442 @@
+// Business Opportunity Scanner — esquema de datos
+// Convenciones:
+//  - Tablas en snake_case plural (@@map), modelos en PascalCase.
+//  - Los identificadores de proveedor (Place ID de Google, id de OSM) se guardan siempre
+//    junto a la clave del proveedor para evitar duplicados (@@unique).
+//  - Los datos de terceros se guardan de forma mínima; ver docs/COMPLIANCE.md.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum ScanStatus {
+  PENDING
+  DISCOVERING
+  ANALYZING
+  COMPLETED
+  COMPLETED_WITH_ERRORS
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  DISCOVER
+  ANALYZE_BUSINESS
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+  CANCELLED
+}
+
+enum WebsiteStatus {
+  SIN_WEB
+  WEB_CAIDA
+  WEB_FUNCIONAL_CON_PROBLEMAS
+  WEB_ACEPTABLE
+  WEB_NO_VERIFICABLE
+}
+
+enum OpportunityLevel {
+  HIGH
+  MEDIUM
+  LOW
+  INSUFFICIENT_EVIDENCE
+}
+
+enum AnalysisStatus {
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum Severity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+/// OBSERVED = dato obtenido de una fuente; INFERRED = deducción; ANALYZED = resultado de un análisis técnico.
+enum Provenance {
+  OBSERVED
+  INFERRED
+  ANALYZED
+}
+
+enum ContactType {
+  PHONE
+  EMAIL
+  CONTACT_FORM
+  WHATSAPP
+  CONTACT_PAGE
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  LINKEDIN
+  X
+  YOUTUBE
+  BOOKING_PAGE
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  TO_CONTACT
+  CONTACTED
+  INTERESTED
+  PROPOSAL_SENT
+  WON
+  LOST
+  DISCARDED
+}
+
+/// Registro de proveedores de datos conocidos por la aplicación.
+model Provider {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  name      String
+  kind      String
+  enabled   Boolean  @default(true)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("providers")
+}
+
+model Scan {
+  id               String     @id @default(cuid())
+  status           ScanStatus @default(PENDING)
+  providerKey      String     @map("provider_key")
+  city             String
+  region           String?
+  country          String
+  radiusKm         Float      @map("radius_km")
+  categories       String[]
+  allCategories    Boolean    @default(false) @map("all_categories")
+  maxResults       Int        @map("max_results")
+  language         String
+  /// CIRCLE en v1. Preparado para POLYGON (areaGeoJson) en el futuro.
+  areaType         String     @default("CIRCLE") @map("area_type")
+  areaGeoJson      Json?      @map("area_geojson")
+  resolvedLabel    String?    @map("resolved_label")
+  centerLat        Float?     @map("center_lat")
+  centerLng        Float?     @map("center_lng")
+  totalFound       Int        @default(0) @map("total_found")
+  totalAnalyzed    Int        @default(0) @map("total_analyzed")
+  totalFailed      Int        @default(0) @map("total_failed")
+  /// Contador de llamadas por SKU/proveedor para estimar coste.
+  apiUsage         Json?      @map("api_usage")
+  estimatedCostUsd Float?     @map("estimated_cost_usd")
+  warnings         Json?
+  errorMessage     String?    @map("error_message")
+  startedAt        DateTime?  @map("started_at")
+  finishedAt       DateTime?  @map("finished_at")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  jobs       ScanJob[]
+  businesses ScanBusiness[]
+  analyses   Analysis[]
+
+  @@index([createdAt])
+  @@map("scans")
+}
+
+model ScanJob {
+  id          String    @id @default(cuid())
+  scanId      String?   @map("scan_id")
+  businessId  String?   @map("business_id")
+  type        JobType
+  status      JobStatus @default(QUEUED)
+  /// Datos transitorios del job. Se vacía al terminar (p. ej. reseñas en memoria).
+  payload     Json?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3) @map("max_attempts")
+  runAfter    DateTime  @default(now()) @map("run_after")
+  lockedAt    DateTime? @map("locked_at")
+  lockedBy    String?   @map("locked_by")
+  lastError   String?   @map("last_error")
+  finishedAt  DateTime? @map("finished_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  scan Scan? @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([scanId, status])
+  @@map("scan_jobs")
+}
+
+model Business {
+  id                   String    @id @default(cuid())
+  providerKey          String    @map("provider_key")
+  providerPlaceId      String    @map("provider_place_id")
+  name                 String
+  categoryKey          String?   @map("category_key")
+  primaryCategory      String?   @map("primary_category")
+  primaryCategoryLabel String?   @map("primary_category_label")
+  secondaryCategories  String[]  @map("secondary_categories")
+  formattedAddress     String?   @map("formatted_address")
+  street               String?
+  postalCode           String?   @map("postal_code")
+  city                 String?
+  region               String?
+  country              String?
+  countryCode          String?   @map("country_code")
+  lat                  Float?
+  lng                  Float?
+  nationalPhone        String?   @map("national_phone")
+  internationalPhone   String?   @map("international_phone")
+  /// Web tal y como la publica el proveedor (puede ser una red social o no existir).
+  providerWebsite      String?   @map("provider_website")
+  mapsUrl              String?   @map("maps_url")
+  rating               Float?
+  userRatingCount      Int?      @map("user_rating_count")
+  openingHours         Json?     @map("opening_hours")
+  businessStatus       String?   @map("business_status")
+  providerEmail        String?   @map("provider_email")
+  providerSocials      Json?     @map("provider_socials")
+  providerDataFetchedAt DateTime? @map("provider_data_fetched_at")
+
+  // Instantánea del último análisis (desnormalizada para listar y filtrar rápido)
+  websiteStatus             WebsiteStatus?    @map("website_status")
+  websiteUrl                String?           @map("website_url")
+  opportunityScore          Int?              @map("opportunity_score")
+  opportunityLevel          OpportunityLevel? @map("opportunity_level")
+  websiteScore              Int?              @map("website_score")
+  informationFreshnessScore Int?              @map("information_freshness_score")
+  contactScore              Int?              @map("contact_score")
+  evidenceConfidenceScore   Int?              @map("evidence_confidence_score")
+  technicalIssueCount       Int               @default(0) @map("technical_issue_count")
+  contentIssueCount         Int               @default(0) @map("content_issue_count")
+  consistencyIssueCount     Int               @default(0) @map("consistency_issue_count")
+  hasPhone                  Boolean           @default(false) @map("has_phone")
+  hasEmail                  Boolean           @default(false) @map("has_email")
+  primaryEmail              String?           @map("primary_email")
+  instagramUrl              String?           @map("instagram_url")
+  facebookUrl               String?           @map("facebook_url")
+  whatsappUrl               String?           @map("whatsapp_url")
+  opportunityReason         String?           @map("opportunity_reason")
+  lastAnalyzedAt            DateTime?         @map("last_analyzed_at")
+  latestAnalysisId          String?           @map("latest_analysis_id")
+
+  // Seguimiento comercial (CRM ligero)
+  leadStatus      LeadStatus @default(NEW) @map("lead_status")
+  nextFollowUpAt  DateTime?  @map("next_follow_up_at")
+  /// Momento en que se envió la notificación push del seguimiento actual (evita repetirla)
+  followUpNotifiedAt DateTime? @map("follow_up_notified_at")
+  lastContactedAt DateTime?  @map("last_contacted_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  scans           ScanBusiness[]
+  analyses        Analysis[]
+  contacts        Contact[]
+  evidence        Evidence[]
+  recommendations Recommendation[]
+  notes           ManualNote[]
+  audits          WebsiteAudit[]
+
+  @@unique([providerKey, providerPlaceId])
+  @@index([opportunityScore])
+  @@index([websiteStatus])
+  @@index([city])
+  @@index([categoryKey])
+  @@index([leadStatus])
+  @@index([nextFollowUpAt])
+  @@map("businesses")
+}
+
+model ScanBusiness {
+  scanId         String   @map("scan_id")
+  businessId     String   @map("business_id")
+  distanceMeters Float?   @map("distance_meters")
+  matchedQuery   String?  @map("matched_query")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  scan     Scan     @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([scanId, businessId])
+  @@index([businessId])
+  @@map("scan_businesses")
+}
+
+model Analysis {
+  id                        String           @id @default(cuid())
+  businessId                String           @map("business_id")
+  scanId                    String?          @map("scan_id")
+  status                    AnalysisStatus
+  websiteStatus             WebsiteStatus    @map("website_status")
+  websiteUrl                String?          @map("website_url")
+  /// provider | search | none
+  websiteSource             String?          @map("website_source")
+  opportunityScore          Int              @map("opportunity_score")
+  opportunityLevel          OpportunityLevel @map("opportunity_level")
+  websiteOpportunityScore   Int              @map("website_opportunity_score")
+  websiteScore              Int?             @map("website_score")
+  informationFreshnessScore Int?             @map("information_freshness_score")
+  contactScore              Int              @map("contact_score")
+  evidenceConfidenceScore   Int              @map("evidence_confidence_score")
+  /// Desglose explicable del scoring (componentes, contribuciones y regla de nivel aplicada).
+  scoreBreakdown            Json             @map("score_breakdown")
+  summary                   String
+  /// Lista de datos que no se han podido verificar.
+  unverified                Json?
+  /// Señales derivadas de reseñas (categoría, evidencia breve, fuente, confianza).
+  reviewSignals             Json?            @map("review_signals")
+  errors                    Json?
+  durationMs                Int?             @map("duration_ms")
+  createdAt                 DateTime         @default(now()) @map("created_at")
+
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  scan            Scan?            @relation(fields: [scanId], references: [id], onDelete: SetNull)
+  audit           WebsiteAudit?
+  evidence        Evidence[]
+  recommendations Recommendation[]
+  contacts        Contact[]
+
+  @@index([businessId, createdAt])
+  @@map("analyses")
+}
+
+model WebsiteAudit {
+  id                  String   @id @default(cuid())
+  analysisId          String   @unique @map("analysis_id")
+  businessId          String   @map("business_id")
+  requestedUrl        String   @map("requested_url")
+  finalUrl            String?  @map("final_url")
+  httpStatus          Int?     @map("http_status")
+  redirectChain       Json?    @map("redirect_chain")
+  isHttps             Boolean? @map("is_https")
+  tls                 Json?
+  responseTimeMs      Int?     @map("response_time_ms")
+  htmlBytes           Int?     @map("html_bytes")
+  pages               Json?
+  resourceStats       Json?    @map("resource_stats")
+  linkChecks          Json?    @map("link_checks")
+  tech                Json?
+  robots              Json?
+  extracted           Json?
+  checks              Json?
+  renderedWithBrowser Boolean  @default(false) @map("rendered_with_browser")
+  errorCode           String?  @map("error_code")
+  errorMessage        String?  @map("error_message")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  analysis Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("website_audits")
+}
+
+model Contact {
+  id         String      @id @default(cuid())
+  businessId String      @map("business_id")
+  analysisId String?     @map("analysis_id")
+  type       ContactType
+  value      String
+  label      String?
+  /// google_places | osm | website | schema_org | search
+  source     String
+  sourceUrl  String?     @map("source_url")
+  provenance Provenance  @default(OBSERVED)
+  confidence String      @default("HIGH")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  analysis Analysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, type, value])
+  @@map("contacts")
+}
+
+/// Cada fila es un hallazgo (finding) con sus evidencias concretas.
+model Evidence {
+  id          String     @id @default(cuid())
+  analysisId  String     @map("analysis_id")
+  businessId  String     @map("business_id")
+  code        String
+  category    String
+  severity    Severity
+  provenance  Provenance
+  confidence  String
+  title       String
+  description String
+  items       Json
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  analysis Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+  @@index([businessId])
+  @@map("evidence")
+}
+
+model Recommendation {
+  id          String   @id @default(cuid())
+  analysisId  String   @map("analysis_id")
+  businessId  String   @map("business_id")
+  code        String
+  title       String
+  description String
+  productType String   @map("product_type")
+  priority    Int
+  triggeredBy String[] @map("triggered_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  analysis Analysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("recommendations")
+}
+
+model ManualNote {
+  id         String   @id @default(cuid())
+  businessId String   @map("business_id")
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("manual_notes")
+}
+
+/// Latido del worker para mostrar su estado en /health.
+model WorkerHeartbeat {
+  id         String   @id
+  lastBeatAt DateTime @map("last_beat_at")
+  info       Json?
+
+  @@map("worker_heartbeats")
+}
+
+/// Suscripciones Web Push (notificaciones de seguimiento en el móvil).
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("push_subscriptions")
+}

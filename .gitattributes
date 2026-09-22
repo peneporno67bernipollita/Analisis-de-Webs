@@ -1,0 +1,5 @@
+# Finales de línea LF en el repositorio (Docker/Linux); Windows puede convertir al hacer checkout
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.jpg binary
