@@ -70,6 +70,13 @@ export async function handleDiscover(scanId: string): Promise<void> {
     const fresh = await prisma.scan.findUnique({ where: { id: scanId }, select: { status: true } });
     if (fresh?.status === "CANCELLED") return;
 
+    // Fijar total y estado ANTES de encolar: otros workers pueden terminar análisis mientras seguimos
+    // en este bucle, y sus incrementos no deben sobrescribirse después.
+    await prisma.scan.update({
+      where: { id: scanId },
+      data: { totalFound: result.places.length, status: result.places.length ? "ANALYZING" : "COMPLETED" },
+    });
+
     let reused = 0;
     let queued = 0;
     const reuseCutoff = new Date(Date.now() - REUSE_ANALYSIS_HOURS * 3_600_000);
@@ -133,9 +140,8 @@ export async function handleDiscover(scanId: string): Promise<void> {
     await prisma.scan.update({
       where: { id: scanId },
       data: {
-        totalFound: result.places.length,
-        totalAnalyzed: reused,
-        status: result.places.length ? "ANALYZING" : "COMPLETED",
+        // increment (no asignación): no pisar los análisis ya contabilizados por otros workers
+        totalAnalyzed: { increment: reused },
         finishedAt: result.places.length ? null : new Date(),
         warnings,
       },

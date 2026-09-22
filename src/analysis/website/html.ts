@@ -307,6 +307,8 @@ export function parsePage(html: string, pageUrl: string): PageData {
 
   // Texto visible (después de extraer lo anterior)
   $("script, style, noscript, svg, template, iframe").remove();
+  // Separar bloques y enlaces: .text() los concatena sin espacio ("info@bar.comHorario")
+  $("br, p, div, li, td, th, a, h1, h2, h3, h4, h5, h6, section, footer, header, address, dd, dt").append(" ");
   const text = $("body").text().replace(/\s+/g, " ").trim();
 
   return {
@@ -360,7 +362,8 @@ export function parsePage(html: string, pageUrl: string): PageData {
 
 // ------------------------------------------------------------------ extractores de texto
 
-const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,24}/gi;
+// El lookbehind evita capturar fragmentos de direcciones con tildes (p. ej. "administración@" → "n@")
+const EMAIL_RE = /(?<![\p{L}\p{N}._%+-])[\p{L}\p{N}._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,24}/giu;
 const EMAIL_BLOCKLIST = [
   /\.(png|jpe?g|gif|webp|svg|css|js)$/i,
   /@(example|domain|dominio|tudominio|yourdomain|email|correo|sentry|sentry-next|wixpress|mysite)\./i,

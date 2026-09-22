@@ -586,9 +586,13 @@ export class HttpWebsiteAnalyzer implements WebsiteAnalyzer {
     | { ok: false; status: WebsiteStatus; reason: string; errorCode?: string; res?: SafeResponse }
   > {
     const attempts: string[] = [];
-    const tryFetch = async (u: string, allowInvalidCert = false): Promise<SafeResponse | FetchFailure> => {
+    const tryFetch = async (
+      u: string,
+      allowInvalidCert = false,
+      timeoutMs = this.opts.timeoutMs,
+    ): Promise<SafeResponse | FetchFailure> => {
       try {
-        const r = await this.fetch(u, { allowInvalidCert });
+        const r = await this.fetch(u, { allowInvalidCert, timeoutMs });
         attempts.push(`${u} → HTTP ${r.status}`);
         return r;
       } catch (err) {
@@ -619,7 +623,9 @@ export class HttpWebsiteAnalyzer implements WebsiteAnalyzer {
         result.code === "CONNECTION_RESET"
       ) {
         await sleep(1500);
-        result = await tryFetch(url.toString());
+        // Segundo intento con más margen: una web muy lenta no es una web caída
+        const slowTimeout = result.code === "TIMEOUT" ? Math.max(30_000, this.opts.timeoutMs * 2) : this.opts.timeoutMs;
+        result = await tryFetch(url.toString(), false, slowTimeout);
       }
     }
     if (
@@ -837,7 +843,8 @@ export class HttpWebsiteAnalyzer implements WebsiteAnalyzer {
     const isBroken = (r: { status?: number; error?: string }) =>
       r.error === "DNS_NOT_FOUND" ||
       r.error === "CONNECTION_REFUSED" ||
-      (r.status !== undefined && (r.status === 404 || r.status === 410 || r.status >= 500));
+      // 503/429 suelen ser limitación por peticiones seguidas (anti-saturación), no enlaces rotos
+      (r.status !== undefined && (r.status === 404 || r.status === 410 || (r.status >= 500 && r.status !== 503)));
 
     const linkResults = await mapWithConcurrency(internal.slice(0, this.opts.maxLinkChecks), 3, head);
     const brokenPagesFromCrawl = pagesLog.filter(
